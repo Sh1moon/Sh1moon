@@ -158,7 +158,7 @@ function handleProtectedPageNavigation(page, e) {
             break;
         case 'play':
             showNotification('Переход к игре');
-            window.location.href = 'Sh1moon/handbook.html';
+            window.location.href = '/handbook.html';
             break;
         case 'create-campaign':
             showNotification('Переход к созданию кампании');
