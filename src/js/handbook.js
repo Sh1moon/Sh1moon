@@ -2,7 +2,7 @@
 let database = {};
 let currentData = [];
 let searchTimeout = null;
-
+let modalNavigationHandler = null;
 // Инициализация приложения
 document.addEventListener('DOMContentLoaded', function() {
     initHandbook();
@@ -273,17 +273,24 @@ function createCard(item) {
     
     return `
         <div class="entity-card" data-id="${item.id}" data-category="${item.category}">
-            <div class="entity-card__image" >
-                ${item.фото ? `<img src="${item.фото}" alt="${item.название}" class="entity-card__image">` : ''}
+            <div class="entity-card__image">
+                ${item.фото ? `
+                    <img src="${item.фото}" alt="${item.название}" class="entity-card__image" loading="lazy">
+                    <div class="image-overlay"></div>
+                ` : `
+                    <div class="image-placeholder">
+                        <span class="placeholder-icon">📚</span>
+                    </div>
+                `}
             </div>
             <div class="entity-card__content">
                 <h3 class="entity-card__title">${item.название}</h3>
                 ${meta ? `<div class="entity-card__meta ${meta.class || ''}">${meta.text}</div>` : ''}
+                <div class="entity-card__hover">Нажмите для подробностей</div>
             </div>
         </div>
     `;
 }
-
 // Получить мета-информацию для карточки
 function getCardMeta(item) {
     if (!item) return null;
@@ -340,38 +347,100 @@ function getRarityClass(rarity) {
     };
     return classMap[rarity] || 'common';
 }
+function setupModalInteractions(item) {
+    const modal = document.getElementById('detailModal');
+    const closeBtn = modal.querySelector('.modal-close');
+    
+    // Закрытие по кнопке
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeModal);
+    }
+    
+    // Закрытие по клику вне окна
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    });
+    
+    // Закрытие по ESC
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeModal();
+        }
+    });
+    
+    // Добавляем плавную анимацию для изображений
+    const images = modal.querySelectorAll('img');
+    images.forEach(img => {
+        img.addEventListener('load', () => {
+            img.style.opacity = '1';
+        });
+        img.style.opacity = '0';
+        img.style.transition = 'opacity 0.3s ease';
+    });
+    
+    // Добавляем навигацию между элементами
+    setupModalNavigation(item);
+}
 
+function setupModalNavigation(item) {
+    const currentIndex = currentData.findIndex(i => i.id === item.id);
+    const prevItem = currentIndex > 0 ? currentData[currentIndex - 1] : null;
+    const nextItem = currentIndex < currentData.length - 1 ? currentData[currentIndex + 1] : null;
+    
+    // Добавляем обработчики клавиш для навигации
+    document.addEventListener('keydown', handleModalNavigation);
+    
+    function handleModalNavigation(e) {
+        if (e.key === 'ArrowLeft' && prevItem) {
+            showDetailModal(prevItem);
+        } else if (e.key === 'ArrowRight' && nextItem) {
+            showDetailModal(nextItem);
+        }
+    }
+    
+    // Сохраняем ссылку на обработчик для последующего удаления
+    modalNavigationHandler = handleModalNavigation;
+}
 // Показать модальное окно с детальной информацией
 function showDetailModal(item) {
     if (!item) return;
     
-    const modalContent = document.getElementById('modalContent');
-    modalContent.innerHTML = createModalContent(item);
-    
     const modal = document.getElementById('detailModal');
-    modal.classList.remove('hidden');
+    const modalContent = document.getElementById('modalContent');
     
-    // Добавляем обработчик закрытия
-    const closeBtn = modalContent.querySelector('.modal-close');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', closeModal);
-    }
-}
-
-// Создание контента модального окна
-function createModalContent(item) {
-    if (!item) return '<div class="modal-body"><p>Ошибка: данные не найдены</p></div>';
-    
-    let content = `
-        <button class="modal-close">&times;</button>
-        <div class="modal-header">
-            <h2 class="modal-title">${item.название || 'Без названия'}</h2>
-            ${item.фото ? `<img src="${item.фото}" alt="${item.название || ''}" class="modal-image">` : ''}
+    // Показываем индикатор загрузки
+    modalContent.innerHTML = `
+        <div class="modal-loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Загрузка информации...</div>
         </div>
-        <div class="modal-body">
     `;
     
-    // Добавляем специфичный контент в зависимости от категории
+    // Активируем модальное окно
+    modal.classList.remove('hidden');
+    setTimeout(() => modal.classList.add('active'), 10);
+    document.body.style.overflow = 'hidden'; // Блокируем скролл страницы
+    
+    // Имитируем загрузку для лучшего UX
+    setTimeout(() => {
+        modalContent.innerHTML = createModalContent(item);
+        setupModalInteractions(item);
+    }, 500);
+}
+function createModalBodyContent(item) {
+    let content = '';
+    
+    // Добавляем категорию как подзаголовок
+    content += `
+        <div class="modal-section">
+            <p class="modal-section__content" style="text-align: center; font-style: italic;">
+                Категория: ${getCategoryTitle(item.category)}
+            </p>
+        </div>
+    `;
+    
     switch (item.category) {
         case 'расы':
             content += createRaceModalContent(item);
@@ -401,8 +470,33 @@ function createModalContent(item) {
             content += createGenericModalContent(item);
     }
     
-    content += '</div>';
     return content;
+}
+// Создание контента модального окна
+function createModalContent(item) {
+    if (!item) return '<div class="modal-body"><p>Ошибка: данные не найдены</p></div>';
+    
+    const currentIndex = currentData.findIndex(i => i.id === item.id);
+    const prevItem = currentIndex > 0 ? currentData[currentIndex - 1] : null;
+    const nextItem = currentIndex < currentData.length - 1 ? currentData[currentIndex + 1] : null;
+    
+    return `
+        <div class="modal-content" >
+            <div class="modal-header">
+                <button class="modal-close" aria-label="Закрыть окно">&times;</button>
+                <h2 class="modal-title">${item.название || 'Без названия'}</h2>
+                ${item.фото ? `
+                    <img src="${item.фото}" alt="${item.название || ''}" class="modal-image" loading="lazy">
+                ` : ''}
+            </div>
+            
+            <div class="modal-body">
+                ${createModalBodyContent(item)}
+            </div>
+            
+
+        </div>
+    `;
 }
 
 // Контент модального окна для рас
@@ -563,32 +657,29 @@ function createClassFeatures(classId) {
 function createSpellModalContent(spell) {
     return `
         <div class="modal-section">
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <div class="stat-item__label">Уровень</div>
-                    <div class="stat-item__value">${spell.уровень === 0 ? 'Заговор' : (spell.уровень || 'N/A')}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-item__label">Школа</div>
-                    <div class="stat-item__value">${spell.школа || 'N/A'}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-item__label">Время</div>
-                    <div class="stat-item__value">${spell.время_накладывания || 'N/A'}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-item__label">Дистанция</div>
-                    <div class="stat-item__value">${spell.дистанция || 'N/A'}</div>
-                </div>
+            <p class="modal-section__content">${spell.описание || 'Описание отсутствует'}</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-item__label">Уровень</div>
+                <div class="stat-item__value">${spell.уровень === 0 ? 'Заговор' : (spell.уровень || 'N/A')}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-item__label">Школа</div>
+                <div class="stat-item__value">${spell.школа || 'N/A'}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-item__label">Время</div>
+                <div class="stat-item__value">${spell.время_накладывания || 'N/A'}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-item__label">Дистанция</div>
+                <div class="stat-item__value">${spell.дистанция || 'N/A'}</div>
             </div>
         </div>
         
         ${createSpellComponents(spell)}
-        
-        <div class="modal-section">
-            <h3 class="modal-section__title">Описание</h3>
-            <p class="modal-section__content">${spell.описание || 'Описание отсутствует'}</p>
-        </div>
         
         ${spell.на_высших_уровнях ? `
             <div class="modal-section">
@@ -858,9 +949,20 @@ function createTags(items, label) {
 // Закрытие модального окна
 function closeModal() {
     const modal = document.getElementById('detailModal');
-    modal.classList.add('hidden');
+    
+    modal.classList.remove('active');
+    
+    // Удаляем обработчик навигации
+    if (modalNavigationHandler) {
+        document.removeEventListener('keydown', modalNavigationHandler);
+        modalNavigationHandler = null;
+    }
+    
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        document.body.style.overflow = ''; // Восстанавливаем скролл
+    }, 300);
 }
-
 // Показать ошибку
 function showError(message) {
     const grid = document.getElementById('contentGrid');
